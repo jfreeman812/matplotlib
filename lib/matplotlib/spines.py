@@ -1,9 +1,7 @@
-import warnings
-
 import numpy as np
 
 import matplotlib
-from matplotlib import docstring, rcParams
+from matplotlib import cbook, docstring, rcParams
 from matplotlib.artist import allow_rasterization
 import matplotlib.transforms as mtransforms
 import matplotlib.patches as mpatches
@@ -145,6 +143,12 @@ class Spine(mpatches.Patch):
             return self._patch_transform
         else:
             return super().get_patch_transform()
+
+    def get_window_extent(self, renderer=None):
+        # make sure the location is updated so that transforms etc are
+        # correct:
+        self._adjust_location()
+        return super().get_window_extent(renderer=renderer)
 
     def get_path(self):
         return self._path
@@ -341,8 +345,8 @@ class Spine(mpatches.Patch):
                                              offset_y,
                                              self.figure.dpi_scale_trans))
             else:
-                warnings.warn('unknown spine type "%s": no spine '
-                              'offset performed' % self.spine_type)
+                cbook._warn_external('unknown spine type "%s": no spine '
+                                     'offset performed' % self.spine_type)
                 self._spine_transform = ('identity',
                                          mtransforms.IdentityTransform())
         elif position_type == 'axes':
@@ -359,8 +363,8 @@ class Spine(mpatches.Patch):
                                              # amount
                                              1, 0, 0, 0, 0, amount))
             else:
-                warnings.warn('unknown spine type "%s": no spine '
-                              'offset performed' % self.spine_type)
+                cbook._warn_external('unknown spine type "%s": no spine '
+                                     'offset performed' % self.spine_type)
                 self._spine_transform = ('identity',
                                          mtransforms.IdentityTransform())
         elif position_type == 'data':
@@ -378,8 +382,8 @@ class Spine(mpatches.Patch):
                                          mtransforms.Affine2D().translate(
                                              0, amount))
             else:
-                warnings.warn('unknown spine type "%s": no spine '
-                              'offset performed' % self.spine_type)
+                cbook._warn_external('unknown spine type "%s": no spine '
+                                     'offset performed' % self.spine_type)
                 self._spine_transform = ('identity',
                                          mtransforms.IdentityTransform())
 

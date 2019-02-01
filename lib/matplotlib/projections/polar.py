@@ -5,8 +5,6 @@ import numpy as np
 
 from matplotlib.axes import Axes
 import matplotlib.axis as maxis
-from matplotlib import cbook
-from matplotlib import docstring
 import matplotlib.markers as mmarkers
 import matplotlib.patches as mpatches
 import matplotlib.path as mpath
@@ -59,7 +57,8 @@ class PolarTransform(mtransforms.Transform):
             t += self._axis.get_theta_offset()
 
         if self._use_rmin and self._axis is not None:
-            r = r - self._axis.get_rorigin()
+            r = (r - self._axis.get_rorigin()) * self._axis.get_rsign()
+
         mask = r < 0
         x[:] = np.where(mask, np.nan, r * np.cos(t))
         y[:] = np.where(mask, np.nan, r * np.sin(t))
@@ -151,15 +150,8 @@ class InvertedPolarTransform(mtransforms.Transform):
     def transform_non_affine(self, xy):
         x = xy[:, 0:1]
         y = xy[:, 1:]
-        r = np.sqrt(x*x + y*y)
-        with np.errstate(invalid='ignore'):
-            # At x=y=r=0 this will raise an
-            # invalid value warning when doing 0/0
-            # Divide by zero warnings are only raised when
-            # the numerator is different from 0. That
-            # should not happen here.
-            theta = np.arccos(x / r)
-        theta = np.where(y < 0, 2 * np.pi - theta, theta)
+        r = np.hypot(x, y)
+        theta = (np.arctan2(y, x) + 2 * np.pi) % (2 * np.pi)
 
         # PolarAxes does not use the theta transforms here, but apply them for
         # backwards-compatibility if not being used by it.
@@ -170,6 +162,7 @@ class InvertedPolarTransform(mtransforms.Transform):
 
         if self._use_rmin and self._axis is not None:
             r += self._axis.get_rorigin()
+            r *= self._axis.get_rsign()
 
         return np.concatenate((theta, r), 1)
     transform_non_affine.__doc__ = \
@@ -327,26 +320,25 @@ class ThetaTick(maxis.XTick):
         text_angle = np.rad2deg(angle) % 360 - 90
         angle -= np.pi / 2
 
-        if self.tick1On:
-            marker = self.tick1line.get_marker()
-            if marker in (mmarkers.TICKUP, '|'):
-                trans = mtransforms.Affine2D().scale(1.0, 1.0).rotate(angle)
-            elif marker == mmarkers.TICKDOWN:
-                trans = mtransforms.Affine2D().scale(1.0, -1.0).rotate(angle)
-            else:
-                # Don't modify custom tick line markers.
-                trans = self.tick1line._marker._transform
-            self.tick1line._marker._transform = trans
-        if self.tick2On:
-            marker = self.tick2line.get_marker()
-            if marker in (mmarkers.TICKUP, '|'):
-                trans = mtransforms.Affine2D().scale(1.0, 1.0).rotate(angle)
-            elif marker == mmarkers.TICKDOWN:
-                trans = mtransforms.Affine2D().scale(1.0, -1.0).rotate(angle)
-            else:
-                # Don't modify custom tick line markers.
-                trans = self.tick2line._marker._transform
-            self.tick2line._marker._transform = trans
+        marker = self.tick1line.get_marker()
+        if marker in (mmarkers.TICKUP, '|'):
+            trans = mtransforms.Affine2D().scale(1, 1).rotate(angle)
+        elif marker == mmarkers.TICKDOWN:
+            trans = mtransforms.Affine2D().scale(1, -1).rotate(angle)
+        else:
+            # Don't modify custom tick line markers.
+            trans = self.tick1line._marker._transform
+        self.tick1line._marker._transform = trans
+
+        marker = self.tick2line.get_marker()
+        if marker in (mmarkers.TICKUP, '|'):
+            trans = mtransforms.Affine2D().scale(1, 1).rotate(angle)
+        elif marker == mmarkers.TICKDOWN:
+            trans = mtransforms.Affine2D().scale(1, -1).rotate(angle)
+        else:
+            # Don't modify custom tick line markers.
+            trans = self.tick2line._marker._transform
+        self.tick2line._marker._transform = trans
 
         mode, user_angle = self._labelrotation
         if mode == 'default':
@@ -357,10 +349,8 @@ class ThetaTick(maxis.XTick):
             elif text_angle < -90:
                 text_angle += 180
             text_angle += user_angle
-        if self.label1On:
-            self.label1.set_rotation(text_angle)
-        if self.label2On:
-            self.label2.set_rotation(text_angle)
+        self.label1.set_rotation(text_angle)
+        self.label2.set_rotation(text_angle)
 
         # This extra padding helps preserve the look from previous releases but
         # is also needed because labels are anchored to their center.
@@ -433,10 +423,9 @@ class RadialLocator(mticker.Locator):
         # Ensure previous behaviour with full circle non-annular views.
         if self._axes:
             if _is_full_circle_rad(*self._axes.viewLim.intervalx):
-                rorigin = self._axes.get_rorigin()
+                rorigin = self._axes.get_rorigin() * self._axes.get_rsign()
                 if self._axes.get_rmin() <= rorigin:
                     show_all = False
-
         if show_all:
             return self.base()
         else:
@@ -456,7 +445,10 @@ class RadialLocator(mticker.Locator):
 
     def view_limits(self, vmin, vmax):
         vmin, vmax = self.base.view_limits(vmin, vmax)
-        return mtransforms.nonsingular(min(0, vmin), vmax)
+        if vmax > vmin:
+            # this allows inverted r/y-lims
+            vmin = min(0, vmin)
+        return mtransforms.nonsingular(vmin, vmax)
 
 
 class _ThetaShift(mtransforms.ScaledTranslation):
@@ -606,100 +598,71 @@ class RadialTick(maxis.YTick):
             angle = (axes.get_rlabel_position() * direction +
                      offset) % 360 - 90
             tick_angle = 0
-            if angle > 90:
-                text_angle = angle - 180
-            elif angle < -90:
-                text_angle = angle + 180
-            else:
-                text_angle = angle
         else:
             angle = (thetamin * direction + offset) % 360 - 90
             if direction > 0:
                 tick_angle = np.deg2rad(angle)
             else:
                 tick_angle = np.deg2rad(angle + 180)
-            if angle > 90:
-                text_angle = angle - 180
-            elif angle < -90:
-                text_angle = angle + 180
-            else:
-                text_angle = angle
+        text_angle = (angle + 90) % 180 - 90  # between -90 and +90.
         mode, user_angle = self._labelrotation
         if mode == 'auto':
             text_angle += user_angle
         else:
             text_angle = user_angle
-        if self.label1On:
-            if full:
-                ha = self.label1.get_ha()
-                va = self.label1.get_va()
-            else:
-                ha, va = self._determine_anchor(mode, angle, direction > 0)
-            self.label1.set_ha(ha)
-            self.label1.set_va(va)
-            self.label1.set_rotation(text_angle)
-        if self.tick1On:
-            marker = self.tick1line.get_marker()
-            if marker == mmarkers.TICKLEFT:
-                trans = (mtransforms.Affine2D()
-                         .scale(1.0, 1.0)
-                         .rotate(tick_angle))
-            elif marker == '_':
-                trans = (mtransforms.Affine2D()
-                         .scale(1.0, 1.0)
-                         .rotate(tick_angle + np.pi / 2))
-            elif marker == mmarkers.TICKRIGHT:
-                trans = (mtransforms.Affine2D()
-                         .scale(-1.0, 1.0)
-                         .rotate(tick_angle))
-            else:
-                # Don't modify custom tick line markers.
-                trans = self.tick1line._marker._transform
-            self.tick1line._marker._transform = trans
 
         if full:
-            self.label2On = False
-            self.tick2On = False
+            ha = self.label1.get_horizontalalignment()
+            va = self.label1.get_verticalalignment()
         else:
-            angle = (thetamax * direction + offset) % 360 - 90
-            if direction > 0:
-                tick_angle = np.deg2rad(angle)
-            else:
-                tick_angle = np.deg2rad(angle + 180)
-            if angle > 90:
-                text_angle = angle - 180
-            elif angle < -90:
-                text_angle = angle + 180
-            else:
-                text_angle = angle
+            ha, va = self._determine_anchor(mode, angle, direction > 0)
+        self.label1.set_horizontalalignment(ha)
+        self.label1.set_verticalalignment(va)
+        self.label1.set_rotation(text_angle)
+
+        marker = self.tick1line.get_marker()
+        if marker == mmarkers.TICKLEFT:
+            trans = mtransforms.Affine2D().rotate(tick_angle)
+        elif marker == '_':
+            trans = mtransforms.Affine2D().rotate(tick_angle + np.pi / 2)
+        elif marker == mmarkers.TICKRIGHT:
+            trans = mtransforms.Affine2D().scale(-1, 1).rotate(tick_angle)
+        else:
+            # Don't modify custom tick line markers.
+            trans = self.tick1line._marker._transform
+        self.tick1line._marker._transform = trans
+
+        if full:
+            self.label2.set_visible(False)
+            self.tick2line.set_visible(False)
+        angle = (thetamax * direction + offset) % 360 - 90
+        if direction > 0:
+            tick_angle = np.deg2rad(angle)
+        else:
+            tick_angle = np.deg2rad(angle + 180)
+        text_angle = (angle + 90) % 180 - 90  # between -90 and +90.
         mode, user_angle = self._labelrotation
         if mode == 'auto':
             text_angle += user_angle
         else:
             text_angle = user_angle
-        if self.label2On:
-            ha, va = self._determine_anchor(mode, angle, direction < 0)
-            self.label2.set_ha(ha)
-            self.label2.set_va(va)
-            self.label2.set_rotation(text_angle)
-        if self.tick2On:
-            marker = self.tick2line.get_marker()
-            if marker == mmarkers.TICKLEFT:
-                trans = (mtransforms.Affine2D()
-                         .scale(1.0, 1.0)
-                         .rotate(tick_angle))
-            elif marker == '_':
-                trans = (mtransforms.Affine2D()
-                         .scale(1.0, 1.0)
-                         .rotate(tick_angle + np.pi / 2))
-            elif marker == mmarkers.TICKRIGHT:
-                trans = (mtransforms.Affine2D()
-                         .scale(-1.0, 1.0)
-                         .rotate(tick_angle))
-            else:
-                # Don't modify custom tick line markers.
-                trans = self.tick2line._marker._transform
-            self.tick2line._marker._transform = trans
+
+        ha, va = self._determine_anchor(mode, angle, direction < 0)
+        self.label2.set_ha(ha)
+        self.label2.set_va(va)
+        self.label2.set_rotation(text_angle)
+
+        marker = self.tick2line.get_marker()
+        if marker == mmarkers.TICKLEFT:
+            trans = mtransforms.Affine2D().rotate(tick_angle)
+        elif marker == '_':
+            trans = mtransforms.Affine2D().rotate(tick_angle + np.pi / 2)
+        elif marker == mmarkers.TICKRIGHT:
+            trans = mtransforms.Affine2D().scale(-1, 1).rotate(tick_angle)
+        else:
+            # Don't modify custom tick line markers.
+            trans = self.tick2line._marker._transform
+        self.tick2line._marker._transform = trans
 
 
 class RadialAxis(maxis.YAxis):
@@ -762,7 +725,7 @@ class _WedgeBbox(mtransforms.Bbox):
 
     Parameters
     ----------
-    center : tuple of float
+    center : (float, float)
         Center of the wedge
     viewLim : `~matplotlib.transforms.Bbox`
         Bbox determining the boundaries of the wedge
@@ -791,7 +754,6 @@ class _WedgeBbox(mtransforms.Bbox):
     def get_points(self):
         if self._invalid:
             points = self._viewLim.get_points().copy()
-
             # Scale angular limits to work with Wedge.
             points[:, 0] *= 180 / np.pi
             if points[0, 0] > points[1, 0]:
@@ -813,15 +775,8 @@ class _WedgeBbox(mtransforms.Bbox):
 
             # Ensure equal aspect ratio.
             w, h = self._points[1] - self._points[0]
-            if h < w:
-                deltah = (w - h) / 2.0
-                deltaw = 0.0
-            elif w < h:
-                deltah = 0.0
-                deltaw = (h - w) / 2.0
-            else:
-                deltah = 0.0
-                deltaw = 0.0
+            deltah = max(w - h, 0) / 2
+            deltaw = max(h - w, 0) / 2
             self._points += np.array([[-deltaw, -deltah], [deltaw, deltah]])
 
             self._invalid = 0
@@ -1016,8 +971,8 @@ class PolarAxes(Axes):
         thetamin, thetamax = np.rad2deg(self._realViewLim.intervalx)
         if thetamin > thetamax:
             thetamin, thetamax = thetamax, thetamin
-        rmin, rmax = self._realViewLim.intervaly - self.get_rorigin()
-
+        rmin, rmax = ((self._realViewLim.intervaly - self.get_rorigin()) *
+                        self.get_rsign())
         if isinstance(self.patch, mpatches.Wedge):
             # Backwards-compatibility: Any subclassed Axes might override the
             # patch to not be the Wedge that PolarAxes uses.
@@ -1143,12 +1098,10 @@ class PolarAxes(Axes):
            Theta increases in the counterclockwise direction
         """
         mtx = self._direction.get_matrix()
-        if direction in ('clockwise',):
+        if direction in ('clockwise', -1):
             mtx[0, 0] = -1
-        elif direction in ('counterclockwise', 'anticlockwise'):
+        elif direction in ('counterclockwise', 'anticlockwise', 1):
             mtx[0, 0] = 1
-        elif direction in (1, -1):
-            mtx[0, 0] = direction
         else:
             raise ValueError(
                 "direction must be 1, -1, clockwise or counterclockwise")
@@ -1184,12 +1137,83 @@ class PolarAxes(Axes):
     def get_rorigin(self):
         return self._originViewLim.y0
 
-    def set_rlim(self, *args, **kwargs):
+    def get_rsign(self):
+        return np.sign(self._originViewLim.y1 - self._originViewLim.y0)
+
+    def set_rlim(self, bottom=None, top=None, emit=True, auto=False, **kwargs):
+        """
+        See `~.polar.PolarAxes.set_ylim`.
+        """
         if 'rmin' in kwargs:
-            kwargs['ymin'] = kwargs.pop('rmin')
+            if bottom is None:
+                bottom = kwargs.pop('rmin')
+            else:
+                raise ValueError('Cannot supply both positional "bottom"'
+                                 'argument and kwarg "rmin"')
         if 'rmax' in kwargs:
-            kwargs['ymax'] = kwargs.pop('rmax')
-        return self.set_ylim(*args, **kwargs)
+            if top is None:
+                top = kwargs.pop('rmax')
+            else:
+                raise ValueError('Cannot supply both positional "top"'
+                                 'argument and kwarg "rmax"')
+        return self.set_ylim(bottom=bottom, top=top, emit=emit, auto=auto,
+                             **kwargs)
+
+    def set_ylim(self, bottom=None, top=None, emit=True, auto=False,
+                 *, ymin=None, ymax=None):
+        """
+        Set the data limits for the radial axis.
+
+        Parameters
+        ----------
+        bottom : scalar, optional
+            The bottom limit (default: None, which leaves the bottom
+            limit unchanged).
+            The bottom and top ylims may be passed as the tuple
+            (*bottom*, *top*) as the first positional argument (or as
+            the *bottom* keyword argument).
+
+        top : scalar, optional
+            The top limit (default: None, which leaves the top limit
+            unchanged).
+
+        emit : bool, optional
+            Whether to notify observers of limit change (default: True).
+
+        auto : bool or None, optional
+            Whether to turn on autoscaling of the y-axis. True turns on,
+            False turns off (default action), None leaves unchanged.
+
+        ymin, ymax : scalar, optional
+            These arguments are deprecated and will be removed in a future
+            version.  They are equivalent to *bottom* and *top* respectively,
+            and it is an error to pass both *ymin* and *bottom* or
+            *ymax* and *top*.
+
+        Returns
+        -------
+        ylimits : tuple
+            Returns the new y-axis limits as (*bottom*, *top*).
+
+        """
+
+        if ymin is not None:
+            if bottom is not None:
+                raise ValueError('Cannot supply both positional "bottom" '
+                                 'argument and kwarg "ymin"')
+            else:
+                bottom = ymin
+        if ymax is not None:
+            if top is not None:
+                raise ValueError('Cannot supply both positional "top" '
+                                 'argument and kwarg "ymax"')
+            else:
+                top = ymax
+        if top is None and len(bottom) == 2:
+            top = bottom[1]
+            bottom = bottom[0]
+
+        return super().set_ylim(bottom=bottom, top=top, emit=emit, auto=auto)
 
     def get_rlabel_position(self):
         """
@@ -1430,121 +1454,3 @@ PolarAxes.InvertedPolarTransform = InvertedPolarTransform
 PolarAxes.ThetaFormatter = ThetaFormatter
 PolarAxes.RadialLocator = RadialLocator
 PolarAxes.ThetaLocator = ThetaLocator
-
-
-# These are a couple of aborted attempts to project a polar plot using
-# cubic bezier curves.
-
-#         def transform_path(self, path):
-#             twopi = 2.0 * np.pi
-#             halfpi = 0.5 * np.pi
-
-#             vertices = path.vertices
-#             t0 = vertices[0:-1, 0]
-#             t1 = vertices[1:  , 0]
-#             td = np.where(t1 > t0, t1 - t0, twopi - (t0 - t1))
-#             maxtd = td.max()
-#             interpolate = np.ceil(maxtd / halfpi)
-#             if interpolate > 1.0:
-#                 vertices = self.interpolate(vertices, interpolate)
-
-#             vertices = self.transform(vertices)
-
-#             result = np.zeros((len(vertices) * 3 - 2, 2), float)
-#             codes = mpath.Path.CURVE4 * np.ones((len(vertices) * 3 - 2, ),
-#                                                 mpath.Path.code_type)
-#             result[0] = vertices[0]
-#             codes[0] = mpath.Path.MOVETO
-
-#             kappa = 4.0 * ((np.sqrt(2.0) - 1.0) / 3.0)
-#             kappa = 0.5
-
-#             p0   = vertices[0:-1]
-#             p1   = vertices[1:  ]
-
-#             x0   = p0[:, 0:1]
-#             y0   = p0[:, 1: ]
-#             b0   = ((y0 - x0) - y0) / ((x0 + y0) - x0)
-#             a0   = y0 - b0*x0
-
-#             x1   = p1[:, 0:1]
-#             y1   = p1[:, 1: ]
-#             b1   = ((y1 - x1) - y1) / ((x1 + y1) - x1)
-#             a1   = y1 - b1*x1
-
-#             x = -(a0-a1) / (b0-b1)
-#             y = a0 + b0*x
-
-#             xk = (x - x0) * kappa + x0
-#             yk = (y - y0) * kappa + y0
-
-#             result[1::3, 0:1] = xk
-#             result[1::3, 1: ] = yk
-
-#             xk = (x - x1) * kappa + x1
-#             yk = (y - y1) * kappa + y1
-
-#             result[2::3, 0:1] = xk
-#             result[2::3, 1: ] = yk
-
-#             result[3::3] = p1
-
-#             print(vertices[-2:])
-#             print(result[-2:])
-
-#             return mpath.Path(result, codes)
-
-#             twopi = 2.0 * np.pi
-#             halfpi = 0.5 * np.pi
-
-#             vertices = path.vertices
-#             t0 = vertices[0:-1, 0]
-#             t1 = vertices[1:  , 0]
-#             td = np.where(t1 > t0, t1 - t0, twopi - (t0 - t1))
-#             maxtd = td.max()
-#             interpolate = np.ceil(maxtd / halfpi)
-
-#             print("interpolate", interpolate)
-#             if interpolate > 1.0:
-#                 vertices = self.interpolate(vertices, interpolate)
-
-#             result = np.zeros((len(vertices) * 3 - 2, 2), float)
-#             codes = mpath.Path.CURVE4 * np.ones((len(vertices) * 3 - 2, ),
-#                                                 mpath.Path.code_type)
-#             result[0] = vertices[0]
-#             codes[0] = mpath.Path.MOVETO
-
-#             kappa = 4.0 * ((np.sqrt(2.0) - 1.0) / 3.0)
-#             tkappa = np.arctan(kappa)
-#             hyp_kappa = np.sqrt(kappa*kappa + 1.0)
-
-#             t0 = vertices[0:-1, 0]
-#             t1 = vertices[1:  , 0]
-#             r0 = vertices[0:-1, 1]
-#             r1 = vertices[1:  , 1]
-
-#             td = np.where(t1 > t0, t1 - t0, twopi - (t0 - t1))
-#             td_scaled = td / (np.pi * 0.5)
-#             rd = r1 - r0
-#             r0kappa = r0 * kappa * td_scaled
-#             r1kappa = r1 * kappa * td_scaled
-#             ravg_kappa = ((r1 + r0) / 2.0) * kappa * td_scaled
-
-#             result[1::3, 0] = t0 + (tkappa * td_scaled)
-#             result[1::3, 1] = r0*hyp_kappa
-#             # result[1::3, 1] = r0 / np.cos(tkappa * td_scaled)
-#             # np.sqrt(r0*r0 + ravg_kappa*ravg_kappa)
-
-#             result[2::3, 0] = t1 - (tkappa * td_scaled)
-#             result[2::3, 1] = r1*hyp_kappa
-#             # result[2::3, 1] = r1 / np.cos(tkappa * td_scaled)
-#             # np.sqrt(r1*r1 + ravg_kappa*ravg_kappa)
-
-#             result[3::3, 0] = t1
-#             result[3::3, 1] = r1
-
-#             print(vertices[:6], result[:6], t0[:6], t1[:6], td[:6],
-#                   td_scaled[:6], tkappa)
-#             result = self.transform(result)
-#             return mpath.Path(result, codes)
-#         transform_path_non_affine = transform_path

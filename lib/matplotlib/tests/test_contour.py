@@ -6,7 +6,6 @@ from matplotlib import pyplot as plt
 from numpy.testing import assert_array_almost_equal
 from matplotlib.colors import LogNorm
 import pytest
-import warnings
 
 
 def test_contour_shape_1d_valid():
@@ -128,6 +127,17 @@ def test_contour_empty_levels():
     with pytest.warns(UserWarning) as record:
         ax.contour(x, x, z, levels=[])
     assert len(record) == 1
+
+
+def test_contour_Nlevels():
+    # A scalar levels arg or kwarg should trigger auto level generation.
+    # https://github.com/matplotlib/matplotlib/issues/11913
+    z = np.arange(12).reshape((3, 4))
+    fig, ax = plt.subplots()
+    cs1 = ax.contour(z, 5)
+    assert len(cs1.levels) > 1
+    cs2 = ax.contour(z, levels=5)
+    assert (cs1.levels == cs2.levels).all()
 
 
 def test_contour_badlevel_fmt():
@@ -281,7 +291,7 @@ def test_corner_mask():
     np.random.seed([1])
     x, y = np.meshgrid(np.linspace(0, 2.0, n), np.linspace(0, 2.0, n))
     z = np.cos(7*x)*np.sin(8*y) + noise_amp*np.random.rand(n, n)
-    mask = np.where(np.random.rand(n, n) >= mask_level, True, False)
+    mask = np.random.rand(n, n) >= mask_level
     z = np.ma.array(z, mask=mask)
 
     for corner_mask in [False, True]:
@@ -352,7 +362,7 @@ def test_circular_contour_warning():
     # Check that almost circular contours don't throw a warning
     with pytest.warns(None) as record:
         x, y = np.meshgrid(np.linspace(-2, 2, 4), np.linspace(-2, 2, 4))
-        r = np.sqrt(x ** 2 + y ** 2)
+        r = np.hypot(x, y)
 
         plt.figure()
         cs = plt.contour(x, y, r)
@@ -391,3 +401,16 @@ def test_contourf_log_extension():
     plt.colorbar(c1, ax=ax1)
     plt.colorbar(c2, ax=ax2)
     plt.colorbar(c3, ax=ax3)
+
+
+@image_comparison(baseline_images=['contour_addlines'],
+                  extensions=['png'], remove_text=True, style='mpl20')
+def test_contour_addlines():
+    fig, ax = plt.subplots()
+    np.random.seed(19680812)
+    X = np.random.rand(10, 10)*10000
+    pcm = ax.pcolormesh(X)
+    # add 1000 to make colors visible...
+    cont = ax.contour(X+1000)
+    cb = fig.colorbar(pcm)
+    cb.add_lines(cont)

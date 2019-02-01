@@ -10,8 +10,6 @@ multiple axes at drawing time.
     object that can be used to set the axes_locator of the axes.
 """
 
-import functools
-
 import matplotlib.transforms as mtransforms
 from matplotlib import cbook
 from matplotlib.axes import SubplotBase
@@ -363,7 +361,7 @@ class SubplotDivider(Divider):
         Parameters
         ----------
         fig : :class:`matplotlib.figure.Figure`
-        args : tuple (*numRows*, *numCols*, *plotNum*)
+        *args : tuple (*numRows*, *numCols*, *plotNum*)
             The array of subplots in the figure has dimensions *numRows*,
             *numCols*, and *plotNum* is the number of the subplot
             being created.  *plotNum* starts at 1 in the upper left
@@ -398,7 +396,7 @@ class SubplotDivider(Divider):
                 self._subplotspec = GridSpec(rows, cols)[int(num)-1]
                 # num - 1 for converting from MATLAB to python indexing
         else:
-            raise ValueError('Illegal argument(s) to subplot: %s' % (args,))
+            raise ValueError(f'Illegal argument(s) to subplot: {args}')
 
         # total = rows*cols
         # num -= 1    # convert from matlab to python indexing

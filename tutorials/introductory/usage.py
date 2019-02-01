@@ -137,9 +137,9 @@ fig, ax_lst = plt.subplots(2, 2)  # a figure with a 2x2 grid of Axes
 # For example, to convert a `pandas.DataFrame` ::
 #
 #   a = pandas.DataFrame(np.random.rand(4,5), columns = list('abcde'))
-#   a_asndarray = a.values
+#   a_asarray = a.values
 #
-# and to covert a `np.matrix` ::
+# and to convert a `np.matrix` ::
 #
 #   b = np.matrix([[1,2],[3,4]])
 #   b_asarray = np.asarray(b)
@@ -284,6 +284,9 @@ my_plotter(ax2, data3, data4, {'marker': 'o'})
 # Again, for these simple examples this style seems like overkill, however
 # once the graphs get slightly more complex it pays off.
 #
+#
+# .. _backends:
+#
 # Backends
 # ========
 #
@@ -389,7 +392,7 @@ my_plotter(ax2, data3, data4, {'marker': 'o'})
 # DPI setting.
 #
 # Here is a summary of the matplotlib renderers (there is an eponymous
-# backed for each; these are *non-interactive backends*, capable of
+# backend for each; these are *non-interactive backends*, capable of
 # writing to a file):
 #
 # =============   ============   ================================================
@@ -600,18 +603,18 @@ my_plotter(ax2, data3, data4, {'marker': 'o'})
 # Prior to version 1.0, show() generally could not be called
 # more than once in a single script (although sometimes one
 # could get away with it); for version 1.0.1 and above, this
-# restriction is lifted, so one can write a script like this:
-
-import numpy as np
-import matplotlib.pyplot as plt
-
-plt.ioff()
-for i in range(3):
-    plt.plot(np.random.rand(10))
-    plt.show()
-
-###############################################################################
-# which makes three plots, one at a time.
+# restriction is lifted, so one can write a script like this::
+#
+#     import numpy as np
+#     import matplotlib.pyplot as plt
+#
+#     plt.ioff()
+#     for i in range(3):
+#         plt.plot(np.random.rand(10))
+#         plt.show()
+#
+# which makes three plots, one at a time. I.e. the second plot will show up,
+# once the first plot is closed.
 #
 # Summary
 # -------
@@ -759,6 +762,14 @@ for i in range(3):
 #   mpl.rcParams['agg.path.chunksize'] = 10000
 #   plt.plot(y)
 #   plt.show()
+#
+# Legends
+# -------
+#
+# The default legend behavior for axes attempts to find the location
+# that covers the fewest data points (`loc='best'`). This can be a
+# very expensive computation if there are lots of data points. In
+# this case, you may want to provide a specific location.
 #
 # Using the *fast* style
 # ----------------------

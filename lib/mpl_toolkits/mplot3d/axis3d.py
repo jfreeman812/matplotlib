@@ -4,17 +4,19 @@
 
 import copy
 
+import numpy as np
+
 from matplotlib import (
     artist, lines as mlines, axis as maxis, patches as mpatches, rcParams)
 from . import art3d, proj3d
 
-import numpy as np
 
 def get_flip_min_max(coord, index, mins, maxs):
     if coord[index] == mins[index]:
         return maxs[index]
     else:
         return mins[index]
+
 
 def move_from_center(coord, centers, deltas, axmask=(True, True, True)):
     '''Return a coordinate that is moved by "deltas" away from the center.'''
@@ -28,22 +30,22 @@ def move_from_center(coord, centers, deltas, axmask=(True, True, True)):
             coord[i] += deltas[i]
     return coord
 
+
 def tick_update_position(tick, tickxs, tickys, labelpos):
     '''Update tick line and label position and style.'''
 
-    for (label, on) in [(tick.label1, tick.label1On),
-                        (tick.label2, tick.label2On)]:
-        if on:
-            label.set_position(labelpos)
-
-    tick.tick1On, tick.tick2On = True, False
+    tick.label1.set_position(labelpos)
+    tick.label2.set_position(labelpos)
+    tick.tick1line.set_visible(True)
+    tick.tick2line.set_visible(False)
     tick.tick1line.set_linestyle('-')
     tick.tick1line.set_marker('')
     tick.tick1line.set_data(tickxs, tickys)
     tick.gridline.set_data(0, 0)
 
-class Axis(maxis.XAxis):
 
+class Axis(maxis.XAxis):
+    """An Axis class for the 3D plots. """
     # These points from the unit cube make up the x, y and z-planes
     _PLANES = (
         (0, 3, 7, 4), (1, 2, 6, 5),     # yz planes
@@ -150,7 +152,7 @@ class Axis(maxis.XAxis):
 
     def set_pane_pos(self, xys):
         xys = np.asarray(xys)
-        xys = xys[:,:2]
+        xys = xys[:, :2]
         self.pane.xy = xys
         self.stale = True
 
@@ -443,10 +445,11 @@ class Axis(maxis.XAxis):
         self.stale = False
 
     def get_view_interval(self):
-        """return the Interval instance for this 3d axis view limits"""
+        # docstring inherited
         return self.v_interval
 
     def set_view_interval(self, vmin, vmax, ignore=False):
+        # docstring inherited
         if ignore:
             self.v_interval = vmin, vmax
         else:
@@ -460,19 +463,23 @@ class Axis(maxis.XAxis):
         # doesn't return junk info.
         return None
 
+
 # Use classes to look at different data limits
+
 
 class XAxis(Axis):
     def get_data_interval(self):
-        'return the Interval instance for this axis data limits'
+        # docstring inherited
         return self.axes.xy_dataLim.intervalx
+
 
 class YAxis(Axis):
     def get_data_interval(self):
-        'return the Interval instance for this axis data limits'
+        # docstring inherited
         return self.axes.xy_dataLim.intervaly
+
 
 class ZAxis(Axis):
     def get_data_interval(self):
-        'return the Interval instance for this axis data limits'
+        # docstring inherited
         return self.axes.zz_dataLim.intervalx

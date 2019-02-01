@@ -34,15 +34,14 @@ themselves.
 # done so that `nan`s are propagated, instead of being silently dropped.
 
 import re
-import warnings
 import weakref
 
 import numpy as np
 from numpy.linalg import inv
 
+from matplotlib import cbook
 from matplotlib._path import (
     affine_transform, count_bboxes_overlapping_bbox, update_path_extents)
-from . import cbook
 from .path import Path
 
 DEBUG = False
@@ -111,7 +110,11 @@ class TransformNode(object):
     def __setstate__(self, data_dict):
         self.__dict__ = data_dict
         # turn the normal dictionary back into a dictionary with weak values
-        self._parents = {k: weakref.ref(v)
+        # The extra lambda is to provide a callback to remove dead
+        # weakrefs from the dictionary when garbage collection is done.
+        self._parents = {k: weakref.ref(v, lambda ref, sid=k,
+                                                  target=self._parents:
+                                                        target.pop(sid))
                          for k, v in self._parents.items() if v is not None}
 
     def __copy__(self, *args):
@@ -169,7 +172,12 @@ class TransformNode(object):
         # parents are destroyed, references from the children won't
         # keep them alive.
         for child in children:
-            child._parents[id(self)] = weakref.ref(self)
+            # Use weak references so this dictionary won't keep obsolete nodes
+            # alive; the callback deletes the dictionary entry. This is a
+            # performance improvement over using WeakValueDictionary.
+            ref = weakref.ref(self, lambda ref, sid=id(self),
+                                        target=child._parents: target.pop(sid))
+            child._parents[id(self)] = ref
 
     if DEBUG:
         _set_children = set_children
@@ -258,11 +266,11 @@ class BboxBase(TransformNode):
     if DEBUG:
         def _check(points):
             if isinstance(points, np.ma.MaskedArray):
-                warnings.warn("Bbox bounds are a masked array.")
+                cbook._warn_external("Bbox bounds are a masked array.")
             points = np.asarray(points)
             if (points[1, 0] - points[0, 0] == 0 or
                 points[1, 1] - points[0, 1] == 0):
-                warnings.warn("Singular Bbox.")
+                cbook._warn_external("Singular Bbox.")
         _check = staticmethod(_check)
 
     def frozen(self):
@@ -273,167 +281,144 @@ class BboxBase(TransformNode):
         return self.get_points()
 
     def is_unit(self):
-        """
-        Returns True if the :class:`Bbox` is the unit bounding box
-        from (0, 0) to (1, 1).
-        """
+        """Return whether this is the unit box (from (0, 0) to (1, 1))."""
         return list(self.get_points().flatten()) == [0., 0., 1., 1.]
 
     @property
     def x0(self):
         """
-        :attr:`x0` is the first of the pair of *x* coordinates that
-        define the bounding box. :attr:`x0` is not guaranteed to be less than
-        :attr:`x1`.  If you require that, use :attr:`xmin`.
+        The first of the pair of *x* coordinates that define the bounding box.
+
+        This is not guaranteed to be less than :attr:`x1` (for that, use
+        :attr:`xmin`).
         """
         return self.get_points()[0, 0]
 
     @property
     def y0(self):
         """
-        :attr:`y0` is the first of the pair of *y* coordinates that
-        define the bounding box. :attr:`y0` is not guaranteed to be less than
-        :attr:`y1`.  If you require that, use :attr:`ymin`.
+        The first of the pair of *y* coordinates that define the bounding box.
+
+        This is not guaranteed to be less than :attr:`y1` (for that, use
+        :attr:`ymin`).
         """
         return self.get_points()[0, 1]
 
     @property
     def x1(self):
         """
-        :attr:`x1` is the second of the pair of *x* coordinates that
-        define the bounding box. :attr:`x1` is not guaranteed to be greater
-        than :attr:`x0`.  If you require that, use :attr:`xmax`.
+        The second of the pair of *x* coordinates that define the bounding box.
+
+        This is not guaranteed to be greater than :attr:`x0` (for that, use
+        :attr:`xmax`).
         """
         return self.get_points()[1, 0]
 
     @property
     def y1(self):
         """
-        :attr:`y1` is the second of the pair of *y* coordinates that
-        define the bounding box. :attr:`y1` is not guaranteed to be greater
-        than :attr:`y0`.  If you require that, use :attr:`ymax`.
+        The second of the pair of *y* coordinates that define the bounding box.
+
+        This is not guaranteed to be greater than :attr:`y0` (for that, use
+        :attr:`ymax`).
         """
         return self.get_points()[1, 1]
 
     @property
     def p0(self):
         """
-        :attr:`p0` is the first pair of (*x*, *y*) coordinates that
-        define the bounding box.  It is not guaranteed to be the bottom-left
-        corner.  For that, use :attr:`min`.
+        The first pair of (*x*, *y*) coordinates that define the bounding box.
+
+        This is not guaranteed to be the bottom-left corner (for that, use
+        :attr:`min`).
         """
         return self.get_points()[0]
 
     @property
     def p1(self):
         """
-        :attr:`p1` is the second pair of (*x*, *y*) coordinates that
-        define the bounding box.  It is not guaranteed to be the top-right
-        corner.  For that, use :attr:`max`.
+        The second pair of (*x*, *y*) coordinates that define the bounding box.
+
+        This is not guaranteed to be the top-right corner (for that, use
+        :attr:`max`).
         """
         return self.get_points()[1]
 
     @property
     def xmin(self):
-        """
-        :attr:`xmin` is the left edge of the bounding box.
-        """
+        """The left edge of the bounding box."""
         return np.min(self.get_points()[:, 0])
 
     @property
     def ymin(self):
-        """
-        :attr:`ymin` is the bottom edge of the bounding box.
-        """
+        """The bottom edge of the bounding box."""
         return np.min(self.get_points()[:, 1])
 
     @property
     def xmax(self):
-        """
-        :attr:`xmax` is the right edge of the bounding box.
-        """
+        """The right edge of the bounding box."""
         return np.max(self.get_points()[:, 0])
 
     @property
     def ymax(self):
-        """
-        :attr:`ymax` is the top edge of the bounding box.
-        """
+        """The top edge of the bounding box."""
         return np.max(self.get_points()[:, 1])
 
     @property
     def min(self):
-        """
-        :attr:`min` is the bottom-left corner of the bounding box.
-        """
+        """The bottom-left corner of the bounding box."""
         return np.min(self.get_points(), axis=0)
 
     @property
     def max(self):
-        """
-        :attr:`max` is the top-right corner of the bounding box.
-        """
+        """The top-right corner of the bounding box."""
         return np.max(self.get_points(), axis=0)
 
     @property
     def intervalx(self):
         """
-        :attr:`intervalx` is the pair of *x* coordinates that define
-        the bounding box. It is not guaranteed to be sorted from left to right.
+        The pair of *x* coordinates that define the bounding box.
+
+        This is not guaranteed to be sorted from left to right.
         """
         return self.get_points()[:, 0]
 
     @property
     def intervaly(self):
         """
-        :attr:`intervaly` is the pair of *y* coordinates that define
-        the bounding box.  It is not guaranteed to be sorted from bottom to
-        top.
+        The pair of *y* coordinates that define the bounding box.
+
+        This is not guaranteed to be sorted from bottom to top.
         """
         return self.get_points()[:, 1]
 
     @property
     def width(self):
-        """
-        The width of the bounding box.  It may be negative if
-        :attr:`x1` < :attr:`x0`.
-        """
+        """The (signed) width of the bounding box."""
         points = self.get_points()
         return points[1, 0] - points[0, 0]
 
     @property
     def height(self):
-        """
-        The height of the bounding box.  It may be negative if
-        :attr:`y1` < :attr:`y0`.
-        """
+        """The (signed) height of the bounding box."""
         points = self.get_points()
         return points[1, 1] - points[0, 1]
 
     @property
     def size(self):
-        """
-        The width and height of the bounding box.  May be negative,
-        in the same way as :attr:`width` and :attr:`height`.
-        """
+        """The (signed) width and height of the bounding box."""
         points = self.get_points()
         return points[1] - points[0]
 
     @property
     def bounds(self):
-        """
-        Returns (:attr:`x0`, :attr:`y0`, :attr:`width`,
-        :attr:`height`).
-        """
+        """Return (:attr:`x0`, :attr:`y0`, :attr:`width`, :attr:`height`)."""
         x0, y0, x1, y1 = self.get_points().flatten()
         return (x0, y0, x1 - x0, y1 - y0)
 
     @property
     def extents(self):
-        """
-        Returns (:attr:`x0`, :attr:`y0`, :attr:`x1`,
-        :attr:`y1`).
-        """
+        """Return (:attr:`x0`, :attr:`y0`, :attr:`x1`, :attr:`y1`)."""
         return self.get_points().flatten().copy()
 
     def get_points(self):
@@ -441,27 +426,27 @@ class BboxBase(TransformNode):
 
     def containsx(self, x):
         """
-        Returns whether *x* is in the closed (:attr:`x0`, :attr:`x1`) interval.
+        Return whether *x* is in the closed (:attr:`x0`, :attr:`x1`) interval.
         """
         x0, x1 = self.intervalx
         return x0 <= x <= x1 or x0 >= x >= x1
 
     def containsy(self, y):
         """
-        Returns whether *y* is in the closed (:attr:`y0`, :attr:`y1`) interval.
+        Return whether *y* is in the closed (:attr:`y0`, :attr:`y1`) interval.
         """
         y0, y1 = self.intervaly
         return y0 <= y <= y1 or y0 >= y >= y1
 
     def contains(self, x, y):
         """
-        Returns whether ``(x, y)`` is in the bounding box or on its edge.
+        Return whether ``(x, y)`` is in the bounding box or on its edge.
         """
         return self.containsx(x) and self.containsy(y)
 
     def overlaps(self, other):
         """
-        Returns whether this bounding box overlaps with the other bounding box.
+        Return whether this bounding box overlaps with the other bounding box.
 
         Parameters
         ----------
@@ -481,27 +466,27 @@ class BboxBase(TransformNode):
 
     def fully_containsx(self, x):
         """
-        Returns whether *x* is in the open (:attr:`x0`, :attr:`x1`) interval.
+        Return whether *x* is in the open (:attr:`x0`, :attr:`x1`) interval.
         """
         x0, x1 = self.intervalx
         return x0 < x < x1 or x0 > x > x1
 
     def fully_containsy(self, y):
         """
-        Returns whether *y* is in the open (:attr:`y0`, :attr:`y1`) interval.
+        Return whether *y* is in the open (:attr:`y0`, :attr:`y1`) interval.
         """
         y0, y1 = self.intervaly
         return y0 < y < y1 or y0 > y > y1
 
     def fully_contains(self, x, y):
         """
-        Returns whether ``x, y`` is in the bounding box, but not on its edge.
+        Return whether ``x, y`` is in the bounding box, but not on its edge.
         """
         return self.fully_containsx(x) and self.fully_containsy(y)
 
     def fully_overlaps(self, other):
         """
-        Returns whether this bounding box overlaps with the other bounding box,
+        Return whether this bounding box overlaps with the other bounding box,
         not including the edges.
 
         Parameters
@@ -522,8 +507,7 @@ class BboxBase(TransformNode):
 
     def transformed(self, transform):
         """
-        Return a new :class:`Bbox` object, statically transformed by
-        the given transform.
+        Construct a `Bbox` by statically transforming this one by *transform*.
         """
         pts = self.get_points()
         ll, ul, lr = transform.transform(np.array([pts[0],
@@ -532,8 +516,8 @@ class BboxBase(TransformNode):
 
     def inverse_transformed(self, transform):
         """
-        Return a new :class:`Bbox` object, statically transformed by
-        the inverse of the given transform.
+        Construct a `Bbox` by statically transforming this one by the inverse
+        of *transform*.
         """
         return self.transformed(transform.inverted())
 
@@ -554,7 +538,7 @@ class BboxBase(TransformNode):
 
         Parameters
         ----------
-        c :
+        c : (float, float) or str
             May be either:
 
             * A sequence (*cx*, *cy*) where *cx* and *cy* range from 0
@@ -620,11 +604,8 @@ class BboxBase(TransformNode):
 
     def splitx(self, *args):
         """
-        e.g., ``bbox.splitx(f1, f2, ...)``
-
-        Returns a list of new :class:`Bbox` objects formed by
-        splitting the original one with vertical lines at fractional
-        positions *f1*, *f2*, ...
+        Return a list of new `Bbox` objects formed by splitting the original
+        one with vertical lines at fractional positions given by *args*.
         """
         xf = [0, *args, 1]
         x0, y0, x1, y1 = self.extents
@@ -634,11 +615,8 @@ class BboxBase(TransformNode):
 
     def splity(self, *args):
         """
-        e.g., ``bbox.splitx(f1, f2, ...)``
-
-        Returns a list of new :class:`Bbox` objects formed by
-        splitting the original one with horizontal lines at fractional
-        positions *f1*, *f2*, ...
+        Return a list of new `Bbox` objects formed by splitting the original
+        one with horizontal lines at fractional positions given by *args*.
         """
         yf = [0, *args, 1]
         x0, y0, x1, y1 = self.extents
@@ -675,9 +653,8 @@ class BboxBase(TransformNode):
 
     def expanded(self, sw, sh):
         """
-        Return a new :class:`Bbox` which is this :class:`Bbox`
-        expanded around its center by the given factors *sw* and
-        *sh*.
+        Construct a `Bbox` by expanding this one around its center by the
+        factors *sw* and *sh*.
         """
         width = self.width
         height = self.height
@@ -687,29 +664,23 @@ class BboxBase(TransformNode):
         return Bbox(self._points + a)
 
     def padded(self, p):
-        """
-        Return a new :class:`Bbox` that is padded on all four sides by
-        the given value.
-        """
+        """Construct a `Bbox` by padding this one on all four sides by *p*."""
         points = self.get_points()
         return Bbox(points + [[-p, -p], [p, p]])
 
     def translated(self, tx, ty):
-        """
-        Return a copy of the :class:`Bbox`, statically translated by
-        *tx* and *ty*.
-        """
+        """Construct a `Bbox` by translating this one by *tx* and *ty*."""
         return Bbox(self._points + (tx, ty))
 
     def corners(self):
         """
-        Return an array of points which are the four corners of this
-        rectangle.  For example, if this :class:`Bbox` is defined by
-        the points (*a*, *b*) and (*c*, *d*), :meth:`corners` returns
-        (*a*, *b*), (*a*, *d*), (*c*, *b*) and (*c*, *d*).
+        Return the corners of this rectangle as an array of points.
+
+        Specifically, this returns the array
+        ``[[x0, y0], [x0, y1], [x1, y0], [x1, y1]]``.
         """
-        l, b, r, t = self.get_points().flatten()
-        return np.array([[l, b], [l, t], [r, b], [r, t]])
+        (x0, y0), (x1, y1) = self.get_points()
+        return np.array([[x0, y0], [x0, y1], [x1, y0], [x1, y1]])
 
     def rotated(self, radians):
         """
@@ -725,9 +696,7 @@ class BboxBase(TransformNode):
 
     @staticmethod
     def union(bboxes):
-        """
-        Return a :class:`Bbox` that contains all of the given bboxes.
-        """
+        """Return a `Bbox` that contains all of the given *bboxes*."""
         if not len(bboxes):
             raise ValueError("'bboxes' cannot be empty")
         x0 = np.min([bbox.xmin for bbox in bboxes])
@@ -739,8 +708,8 @@ class BboxBase(TransformNode):
     @staticmethod
     def intersection(bbox1, bbox2):
         """
-        Return the intersection of the two bboxes or None
-        if they do not intersect.
+        Return the intersection of *bbox1* and *bbox2* if they intersect, or
+        None if they don't.
         """
         x0 = np.maximum(bbox1.xmin, bbox2.xmin)
         x1 = np.minimum(bbox1.xmax, bbox2.xmax)
@@ -912,7 +881,7 @@ class Bbox(BboxBase):
 
         path = Path(xy)
         self.update_from_path(path, ignore=ignore,
-                                    updatex=updatex, updatey=updatey)
+                              updatex=updatex, updatey=updatey)
 
     @BboxBase.x0.setter
     def x0(self, val):
@@ -1368,7 +1337,7 @@ class Transform(TransformNode):
 
             (A + B) - (B)^-1 == A
 
-            # similarly, when B contains tree A, we can avoid decending A at
+            # similarly, when B contains tree A, we can avoid descending A at
             # all, basically:
             A - (A + B) == ((B + A) - A).inverted() or B^-1
 
@@ -1386,8 +1355,9 @@ class Transform(TransformNode):
         for remainder, sub_tree in other._iter_break_from_left_to_right():
             if sub_tree == self:
                 if not remainder.has_inverse:
-                    raise ValueError("The shortcut cannot be computed since "
-                     "other's transform includes a non-invertable component.")
+                    raise ValueError(
+                        "The shortcut cannot be computed since 'other' "
+                        "includes a non-invertible component")
                 return remainder.inverted()
 
         # if we have got this far, then there was no shortcut possible
@@ -1544,9 +1514,7 @@ class Transform(TransformNode):
         ``transform_path_affine(transform_path_non_affine(values))``.
         """
         x = self.transform_non_affine(path.vertices)
-        return Path._fast_from_codes_and_verts(x, path.codes,
-                {'interpolation_steps': path._interpolation_steps,
-                 'should_simplify': path.should_simplify})
+        return Path._fast_from_codes_and_verts(x, path.codes, path)
 
     def transform_angles(self, angles, pts, radians=False, pushoff=1e-5):
         """
@@ -1702,17 +1670,9 @@ class TransformWrapper(Transform):
         self.invalidate()
         self._invalid = 0
 
-    def _get_is_affine(self):
-        return self._child.is_affine
-    is_affine = property(_get_is_affine)
-
-    def _get_is_separable(self):
-        return self._child.is_separable
-    is_separable = property(_get_is_separable)
-
-    def _get_has_inverse(self):
-        return self._child.has_inverse
-    has_inverse = property(_get_has_inverse)
+    is_affine = property(lambda self: self._child.is_affine)
+    is_separable = property(lambda self: self._child.is_separable)
+    has_inverse = property(lambda self: self._child.has_inverse)
 
 
 class AffineBase(Transform):
@@ -1729,14 +1689,6 @@ class AffineBase(Transform):
     def __array__(self, *args, **kwargs):
         # optimises the access of the transform matrix vs the superclass
         return self.get_matrix()
-
-    @staticmethod
-    def _concat(a, b):
-        """
-        Concatenates two transformation matrices (represented as numpy
-        arrays) together.
-        """
-        return np.dot(b, a)
 
     def __eq__(self, other):
         if getattr(other, "is_affine", False):
@@ -1799,10 +1751,10 @@ class Affine2DBase(AffineBase):
         return Affine2D(self.get_matrix().copy())
     frozen.__doc__ = AffineBase.frozen.__doc__
 
-    def _get_is_separable(self):
+    @property
+    def is_separable(self):
         mtx = self.get_matrix()
-        return mtx[0, 1] == 0.0 and mtx[1, 0] == 0.0
-    is_separable = property(_get_is_separable)
+        return mtx[0, 1] == mtx[1, 0] == 0.0
 
     def to_values(self):
         """
@@ -1843,7 +1795,7 @@ class Affine2DBase(AffineBase):
             # points to an array in the first place.  If we can use
             # more arrays upstream, that should help here.
             if not isinstance(points, (np.ma.MaskedArray, np.ndarray)):
-                warnings.warn(
+                cbook._warn_external(
                     ('A non-numpy array of type %s was passed in for ' +
                      'transformation.  Please correct this.')
                     % type(points))
@@ -2075,11 +2027,6 @@ class Affine2D(Affine2DBase):
         """
         return self.skew(np.deg2rad(xShear), np.deg2rad(yShear))
 
-    def _get_is_separable(self):
-        mtx = self.get_matrix()
-        return mtx[0, 1] == 0.0 and mtx[1, 0] == 0.0
-    is_separable = property(_get_is_separable)
-
 
 class IdentityTransform(Affine2DBase):
     """
@@ -2181,13 +2128,9 @@ class BlendedGenericTransform(Transform):
         # a blended transform cannot possibly contain a branch from two different transforms.
         return False
 
-    def _get_is_affine(self):
-        return self._x.is_affine and self._y.is_affine
-    is_affine = property(_get_is_affine)
-
-    def _get_has_inverse(self):
-        return self._x.has_inverse and self._y.has_inverse
-    has_inverse = property(_get_has_inverse)
+    is_affine = property(lambda self: self._x.is_affine and self._y.is_affine)
+    has_inverse = property(
+        lambda self: self._x.has_inverse and self._y.has_inverse)
 
     def frozen(self):
         return blended_transform_factory(self._x.frozen(), self._y.frozen())
@@ -2372,8 +2315,6 @@ class CompositeGenericTransform(Transform):
         self._b = b
         self.set_children(a, b)
 
-    is_affine = property(lambda self: self._a.is_affine and self._b.is_affine)
-
     def frozen(self):
         self._invalid = 0
         frozen = composite_transform_factory(self._a.frozen(), self._b.frozen())
@@ -2410,17 +2351,12 @@ class CompositeGenericTransform(Transform):
         for left, right in self._b._iter_break_from_left_to_right():
             yield self._a + left, right
 
-    @property
-    def depth(self):
-        return self._a.depth + self._b.depth
-
-    def _get_is_affine(self):
-        return self._a.is_affine and self._b.is_affine
-    is_affine = property(_get_is_affine)
-
-    def _get_is_separable(self):
-        return self._a.is_separable and self._b.is_separable
-    is_separable = property(_get_is_separable)
+    depth = property(lambda self: self._a.depth + self._b.depth)
+    is_affine = property(lambda self: self._a.is_affine and self._b.is_affine)
+    is_separable = property(
+        lambda self: self._a.is_separable and self._b.is_separable)
+    has_inverse = property(
+        lambda self: self._a.has_inverse and self._b.has_inverse)
 
     def __str__(self):
         return ("{}(\n"
@@ -2465,10 +2401,6 @@ class CompositeGenericTransform(Transform):
     def inverted(self):
         return CompositeGenericTransform(self._b.inverted(), self._a.inverted())
     inverted.__doc__ = Transform.inverted.__doc__
-
-    def _get_has_inverse(self):
-        return self._a.has_inverse and self._b.has_inverse
-    has_inverse = property(_get_has_inverse)
 
 
 class CompositeAffine2D(Affine2DBase):
@@ -2715,7 +2647,7 @@ class BboxTransformFrom(Affine2DBase):
 class ScaledTranslation(Affine2DBase):
     """
     A transformation that translates by *xt* and *yt*, after *xt* and *yt*
-    have been transformad by the given transform *scale_trans*.
+    have been transformed by *scale_trans*.
     """
     def __init__(self, xt, yt, scale_trans, **kwargs):
         Affine2DBase.__init__(self, **kwargs)
@@ -2782,9 +2714,7 @@ class TransformedPath(TransformNode):
             self._transformed_points = \
                 Path._fast_from_codes_and_verts(
                     self._transform.transform_non_affine(self._path.vertices),
-                    None,
-                    {'interpolation_steps': self._path._interpolation_steps,
-                     'should_simplify': self._path.should_simplify})
+                    None, self._path)
         self._invalid = 0
 
     def get_transformed_points_and_affine(self):
@@ -2852,9 +2782,7 @@ class TransformedPatchPath(TransformedPath):
             self._transformed_points = \
                 Path._fast_from_codes_and_verts(
                     self._transform.transform_non_affine(patch_path.vertices),
-                    None,
-                    {'interpolation_steps': patch_path._interpolation_steps,
-                     'should_simplify': patch_path.should_simplify})
+                    None, patch_path)
         self._invalid = 0
 
 
@@ -2926,10 +2854,39 @@ def interval_contains(interval, val):
     Returns
     -------
     bool
-        Returns true if given val is within the interval.
+        Returns *True* if given *val* is within the *interval*.
     """
     a, b = interval
-    return a <= val <= b or a >= val >= b
+    if a > b:
+        a, b = b, a
+    return a <= val <= b
+
+
+def _interval_contains_close(interval, val, rtol=1e-10):
+    """
+    Check, inclusively, whether an interval includes a given value, with the
+    interval expanded by a small tolerance to admit floating point errors.
+
+    Parameters
+    ----------
+    interval : sequence of scalar
+        A 2-length sequence, endpoints that define the interval.
+    val : scalar
+        Value to check is within interval.
+    rtol : scalar
+        Tolerance slippage allowed outside of this interval.  Default
+        1e-10 * (b - a).
+
+    Returns
+    -------
+    bool
+        Returns *True* if given *val* is within the *interval* (with tolerance)
+    """
+    a, b = interval
+    if a > b:
+        a, b = b, a
+    rtol = (b - a) * rtol
+    return a - rtol <= val <= b + rtol
 
 
 def interval_contains_open(interval, val):

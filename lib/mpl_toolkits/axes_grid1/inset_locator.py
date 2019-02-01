@@ -2,8 +2,7 @@
 A collection of functions and objects for creating or placing inset axes.
 """
 
-import warnings
-from matplotlib import docstring
+from matplotlib import cbook, docstring
 from matplotlib.offsetbox import AnchoredOffsetbox
 from matplotlib.patches import Patch, Rectangle
 from matplotlib.path import Path
@@ -400,8 +399,8 @@ def inset_axes(parent_axes, width, height, loc='upper right',
     creates in inset axes in the lower left corner of *parent_axes* which spans
     over 30%% in height and 40%% in width of the *parent_axes*. Since the usage
     of `.inset_axes` may become slightly tricky when exceeding such standard
-    cases, it is recommended to read
-    :ref:`the examples <sphx_glr_gallery_axes_grid1_inset_locator_demo.py>`.
+    cases, it is recommended to read :doc:`the examples
+    </gallery/axes_grid1/inset_locator_demo>`.
 
     Notes
     -----
@@ -504,9 +503,10 @@ def inset_axes(parent_axes, width, height, loc='upper right',
     if bbox_transform in [parent_axes.transAxes,
                           parent_axes.figure.transFigure]:
         if bbox_to_anchor is None:
-            warnings.warn("Using the axes or figure transform requires a "
-                          "bounding box in the respective coordinates. "
-                          "Using bbox_to_anchor=(0,0,1,1) now.")
+            cbook._warn_external("Using the axes or figure transform "
+                                 "requires a bounding box in the respective "
+                                 "coordinates. "
+                                 "Using bbox_to_anchor=(0,0,1,1) now.")
             bbox_to_anchor = (0, 0, 1, 1)
 
     if bbox_to_anchor is None:
@@ -540,7 +540,7 @@ def zoomed_inset_axes(parent_axes, zoom, loc='upper right',
                       borderpad=0.5):
     """
     Create an anchored inset axes by scaling a parent axes. For usage, also see
-    :ref:`the examples <sphx_glr_gallery_axes_grid1_inset_locator_demo2.py>`.
+    :doc:`the examples </gallery/axes_grid1/inset_locator_demo2>`.
 
     Parameters
     ----------

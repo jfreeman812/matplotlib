@@ -23,7 +23,7 @@ As of Matplotlib 2.2, `numpy.datetime64` objects are handled the same way
 as `datetime.datetime` objects.
 
 If you prefer the pandas converters and locators, you can register their
-converter with the `matplolib.units` module::
+converter with the `matplotlib.units` module::
 
   from pandas.tseries import converter as pdtc
   pdtc.register()
@@ -540,6 +540,18 @@ Tukey's `box plots <http://matplotlib.org/examples/pylab_examples/boxplot_demo.h
 `Violin plots <http://matplotlib.org/examples/statistics/violinplot_demo.html>`_ are closely related to box plots but add useful information such as the distribution of the sample data (density trace).
 Violin plots were added in Matplotlib 1.4.
 
+.. _how-to-threads:
+
+Working with threads
+--------------------
+
+Matplotlib is not thread-safe: in fact, there are known race conditions
+that affect certain artists.  Hence, if you work with threads, it is your
+responsibility to set up the proper locks to serialize access to Matplotlib
+artists.
+
+Note that (for the case where you are working with an interactive backend) most
+GUI backends *require* being run from the main thread as well.
 
 .. _howto-contribute:
 
@@ -578,7 +590,6 @@ that the bug reports will be a conversation.  If you do not want to
 register with github, please email bug reports to the `mailing list
 <matplotlib-devel@python.org>`_.
 
-
 The easiest way to submit patches to Matplotlib is through pull
 requests on github.  Please see the :ref:`developers-guide-index` for
 the details.
@@ -599,15 +610,15 @@ corners.  This is where you come in.
 There is a good chance you know more about Matplotlib usage in some
 areas, the stuff you do every day, than many of the core developers
 who wrote most of the documentation.  Just pulled your hair out
-compiling Matplotlib for windows?  Write a FAQ or a section for the
+compiling Matplotlib for Windows?  Write a FAQ or a section for the
 :ref:`installing-faq` page.  Are you a digital signal processing wizard?
 Write a tutorial on the signal analysis plotting functions like
 :func:`~matplotlib.pyplot.xcorr`, :func:`~matplotlib.pyplot.psd` and
 :func:`~matplotlib.pyplot.specgram`.  Do you use Matplotlib with
 `django <https://www.djangoproject.com/>`_ or other popular web
 application servers?  Write a FAQ or tutorial and we'll find a place
-for it in the :ref:`users-guide-index`.  Bundle Matplotlib in a
-`py2exe <http://www.py2exe.org/>`_ app?  ... I think you get the idea.
+for it in the :ref:`users-guide-index`.  And so on...  I think you get the
+idea.
 
 Matplotlib is documented using the `sphinx
 <http://www.sphinx-doc.org/index.html>`_ extensions to restructured text
@@ -637,7 +648,7 @@ or look at the open issues on github.
 Matplotlib in a web application server
 ======================================
 
-Many users report initial problems trying to use maptlotlib in web
+Many users report initial problems trying to use Matplotlib in web
 application servers, because by default Matplotlib ships configured to
 work with a graphical user interface which may require an X11
 connection.  Since many barebones application servers do not have X11
@@ -657,14 +668,14 @@ Agg is to call::
     matplotlib.use('Agg')
     import matplotlib.pyplot as plt
 
-For more on configuring your backend, see
-:ref:`what-is-a-backend`.
+For more on configuring your backend, see :ref:`what-is-a-backend`.
 
 Alternatively, you can avoid pylab/pyplot altogether, which will give
 you a little more control, by calling the API directly as shown in
-:doc:`/gallery/misc/agg_oo_sgskip`.
+:doc:`/gallery/user_interfaces/canvasagg`.
 
-You can either generate hardcopy on the filesystem by calling savefig::
+You can either generate hardcopy on the filesystem by calling
+`.Figure.savefig()`::
 
     # do this before importing pylab or pyplot
     import matplotlib
@@ -691,21 +702,6 @@ Pillow for further processing::
     imgdata.seek(0)  # rewind the data
     im = Image.open(imgdata)
 
-
-Matplotlib with apache
-----------------------
-
-TODO; see :ref:`how-to-contribute-docs`.
-
-Matplotlib with django
-----------------------
-
-TODO; see :ref:`how-to-contribute-docs`.
-
-Matplotlib with zope
---------------------
-
-TODO; see :ref:`how-to-contribute-docs`.
 
 .. _howto-click-maps:
 

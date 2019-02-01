@@ -1,6 +1,7 @@
+from pathlib import Path
+import platform
 import sys
 import warnings
-import platform
 
 from matplotlib import rcParams
 from matplotlib.testing.decorators import image_comparison, check_figures_equal
@@ -115,7 +116,7 @@ def test_clf_keyword():
 def test_figure():
     # named figure support
     fig = plt.figure('today')
-    ax = fig.add_subplot(111)
+    ax = fig.add_subplot()
     ax.set_title(fig.get_label())
     ax.plot(np.arange(5))
     # plot red line in a different figure.
@@ -365,8 +366,8 @@ def test_subplots_shareax_loglabels():
 
 def test_savefig():
     fig = plt.figure()
-    msg = "savefig() takes 2 positional arguments but 3 were given"
-    with pytest.raises(TypeError, message=msg):
+    msg = r"savefig\(\) takes 2 positional arguments but 3 were given"
+    with pytest.raises(TypeError, match=msg):
         fig.savefig("fname1.png", "fname2.png")
 
 
@@ -383,36 +384,37 @@ def test_warn_cl_plus_tl():
     assert not(fig.get_constrained_layout())
 
 
-@check_figures_equal(extensions=["png", "pdf", "svg"])
+@check_figures_equal(extensions=["png", "pdf"])
 def test_add_artist(fig_test, fig_ref):
     fig_test.set_dpi(100)
     fig_ref.set_dpi(100)
 
     ax = fig_test.subplots()
-    l1 = plt.Line2D([.2, .7], [.7, .7])
-    l2 = plt.Line2D([.2, .7], [.8, .8])
-    r1 = plt.Circle((20, 20), 100, transform=None)
-    r2 = plt.Circle((.7, .5), .05)
+    l1 = plt.Line2D([.2, .7], [.7, .7], gid='l1')
+    l2 = plt.Line2D([.2, .7], [.8, .8], gid='l2')
+    r1 = plt.Circle((20, 20), 100, transform=None, gid='C1')
+    r2 = plt.Circle((.7, .5), .05, gid='C2')
     r3 = plt.Circle((4.5, .8), .55, transform=fig_test.dpi_scale_trans,
-                    facecolor='crimson')
+                    facecolor='crimson', gid='C3')
     for a in [l1, l2, r1, r2, r3]:
         fig_test.add_artist(a)
     l2.remove()
 
     ax2 = fig_ref.subplots()
-    l1 = plt.Line2D([.2, .7], [.7, .7], transform=fig_ref.transFigure)
-    r1 = plt.Circle((20, 20), 100, transform=None, clip_on=False, zorder=20)
-    r2 = plt.Circle((.7, .5), .05, transform=fig_ref.transFigure)
+    l1 = plt.Line2D([.2, .7], [.7, .7], transform=fig_ref.transFigure,
+                    gid='l1', zorder=21)
+    r1 = plt.Circle((20, 20), 100, transform=None, clip_on=False, zorder=20,
+                    gid='C1')
+    r2 = plt.Circle((.7, .5), .05, transform=fig_ref.transFigure, gid='C2',
+                    zorder=20)
     r3 = plt.Circle((4.5, .8), .55, transform=fig_ref.dpi_scale_trans,
-                    facecolor='crimson', clip_on=False, zorder=20)
+                    facecolor='crimson', clip_on=False, zorder=20, gid='C3')
     for a in [l1, r1, r2, r3]:
         ax2.add_artist(a)
 
 
-@pytest.mark.skipif(sys.version_info < (3, 6), reason="requires Python 3.6+")
 @pytest.mark.parametrize("fmt", ["png", "pdf", "ps", "eps", "svg"])
 def test_fspath(fmt, tmpdir):
-    from pathlib import Path
     out = Path(tmpdir, "test.{}".format(fmt))
     plt.savefig(out)
     with out.open("rb") as file:

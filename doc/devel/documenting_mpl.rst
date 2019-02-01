@@ -47,15 +47,10 @@ Installing dependencies
 The documentation for Matplotlib is generated from reStructuredText (ReST_)
 using the Sphinx_ documentation generation tool. There are several extra
 requirements that are needed to build the documentation. They are listed in
-:file:`doc-requirements.txt` and listed below:
+:file:`doc-requirements.txt`, which is shown below:
 
-* Sphinx>=1.3, !=1.5.0, !=1.6.4, !=1.7.3
-* colorspacious
-* IPython
-* numpydoc>=0.4
-* Pillow
-* sphinx-gallery>=0.1.13
-* graphviz
+.. include:: ../../requirements/doc/doc-requirements.txt
+   :literal:
 
 .. note::
 
@@ -408,7 +403,7 @@ Quotes for strings
 Matplotlib does not have a convention whether to use single-quotes or
 double-quotes.  There is a mixture of both in the current code.
 
-Use simple single or double quotes when giving string values, e.g.:: rst
+Use simple single or double quotes when giving string values, e.g.
 
 .. code-block:: rst
 
@@ -425,6 +420,8 @@ Generally, the `numpydoc docstring guide`_ conventions apply. The following
 rules expand on them where the numpydoc conventions are not specific.
 
 Use ``float`` for a type that can be any number.
+
+Use ``(float, float)`` to describe a 2D position.
 
 Use ``array-like`` for homogeneous numeric sequences, which could
 typically be a numpy.array. Dimensionality may be specified using ``2D``,
@@ -478,7 +475,9 @@ also`` sections. No need to use backticks there::
 Wrapping parameter lists
 ~~~~~~~~~~~~~~~~~~~~~~~~
 Long parameter lists should be wrapped using a ``\`` for continuation and
-starting on the new line without any indent:
+starting on the new line without any indent (no indent because pydoc will
+parse the docstring and strip the line continuation so that indent would
+result in a lot of whitespace within the line):
 
 .. code-block:: python
 
@@ -488,8 +487,7 @@ starting on the new line without any indent:
 
       Parameters
       ----------
-      projection :
-          {'aitoff', 'hammer', 'lambert', 'mollweide', 'polar', \
+      projection : {'aitoff', 'hammer', 'lambert', 'mollweide', 'polar', \
   'rectilinear'}, optional
           The projection type of the axes.
 
@@ -614,7 +612,7 @@ Then in any function accepting `~.Line2D` pass-through ``kwargs``, e.g.,
       Some stuff omitted
 
       The kwargs are Line2D properties:
-      %(Line2D)s
+      %(_Line2D_docstr)s
 
       kwargs scalex and scaley, if defined, are passed on
       to autoscale_view to determine whether the x and y axes are
@@ -629,6 +627,29 @@ we can't modify the ``Patch.__init__.__doc__`` docstring outside the class
 definition.  There are some some manual hacks in this case, violating the
 "single entry point" requirement above -- see the ``docstring.interpd.update``
 calls in `matplotlib.patches`.
+
+
+Inheriting docstrings
+---------------------
+
+If a subclass overrides a method but does not change the semantics, we can
+reuse the parent docstring for the method of the child class. Python does this
+automatically, if the subclass method does not have a docstring.
+
+Use a plain comment `# docstring inherited` to denote the intention to reuse
+the parent docstring. That way we do not accidentially create a docstring in
+the future::
+
+    class A:
+        def foo():
+            """The parent docstring."""
+            pass
+
+    class B(A):
+        def foo():
+            # docstring inherited
+            pass
+
 
 .. _docstring-adding-figures:
 

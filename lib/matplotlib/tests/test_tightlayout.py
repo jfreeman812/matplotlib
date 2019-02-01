@@ -154,7 +154,7 @@ def test_tight_layout8():
 
 @image_comparison(baseline_images=['tight_layout9'])
 def test_tight_layout9():
-    # Test tight_layout for non-visible suplots
+    # Test tight_layout for non-visible subplots
     # GH 8244
     f, axarr = plt.subplots(2, 2)
     axarr[1][1].set_visible(False)
@@ -315,4 +315,20 @@ def test_badsubplotgrid():
     ax5 = plt.subplot2grid((5, 5), (0, 3), colspan=3, rowspan=5)
     with warnings.catch_warnings(record=True) as w:
         plt.tight_layout()
+        assert len(w) == 1
+
+
+def test_collapsed():
+    # test that if a call to tight_layout will collapses the axes that
+    # it does not get applied:
+    fig, ax = plt.subplots(tight_layout=True)
+    ax.set_xlim([0, 1])
+    ax.set_ylim([0, 1])
+
+    ax.annotate('BIG LONG STRING', xy=(1.25, 2), xytext=(10.5, 1.75),)
+    p1 = ax.get_position()
+    with warnings.catch_warnings(record=True) as w:
+        plt.tight_layout()
+        p2 = ax.get_position()
+        assert p1.width == p2.width
         assert len(w) == 1

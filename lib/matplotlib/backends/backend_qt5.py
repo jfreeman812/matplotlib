@@ -14,7 +14,6 @@ from matplotlib.backend_bases import (
     TimerBase, cursors, ToolContainerBase, StatusbarBase)
 import matplotlib.backends.qt_editor.figureoptions as figureoptions
 from matplotlib.backends.qt_editor.formsubplottool import UiSubplotTool
-from matplotlib.figure import Figure
 from matplotlib.backend_managers import ToolManager
 
 from .qt_compat import (
@@ -163,10 +162,10 @@ def _allow_super_init(__init__):
             next_coop_init.__init__(self, *args, **kwargs)
 
         @functools.wraps(__init__)
-        def wrapper(self, **kwargs):
+        def wrapper(self, *args, **kwargs):
             with cbook._setattr_cm(QtWidgets.QWidget,
                                    __init__=cooperative_qwidget_init):
-                __init__(self, **kwargs)
+                __init__(self, *args, **kwargs)
 
         return wrapper
 
@@ -241,7 +240,6 @@ class FigureCanvasQT(QtWidgets.QWidget, FigureCanvasBase):
         self._dpi_ratio_prev = None
 
         self._draw_pending = False
-        self._erase_before_paint = False
         self._is_drawing = False
         self._draw_rect_callback = lambda painter: None
 
@@ -377,9 +375,8 @@ class FigureCanvasQT(QtWidgets.QWidget, FigureCanvasBase):
         if key is not None:
             FigureCanvasBase.key_release_event(self, key, guiEvent=event)
 
+    @cbook.deprecated("3.0", alternative="event.guiEvent.isAutoRepeat")
     @property
-    @cbook.deprecated("3.0", "Manually check `event.guiEvent.isAutoRepeat()` "
-                      "in the event handler.")
     def keyAutoRepeat(self):
         """
         If True, enable auto-repeat for key events.
@@ -387,8 +384,6 @@ class FigureCanvasQT(QtWidgets.QWidget, FigureCanvasBase):
         return self._keyautorepeat
 
     @keyAutoRepeat.setter
-    @cbook.deprecated("3.0", "Manually check `event.guiEvent.isAutoRepeat()` "
-                      "in the event handler.")
     def keyAutoRepeat(self, val):
         self._keyautorepeat = bool(val)
 
@@ -495,7 +490,6 @@ class FigureCanvasQT(QtWidgets.QWidget, FigureCanvasBase):
             return
         with cbook._setattr_cm(self, _is_drawing=True):
             super().draw()
-        self._erase_before_paint = True
         self.update()
 
     def draw_idle(self):
@@ -860,6 +854,12 @@ class NavigationToolbar2QT(NavigationToolbar2, QtWidgets.QToolBar):
                     self, "Error saving file", str(e),
                     QtWidgets.QMessageBox.Ok, QtWidgets.QMessageBox.NoButton)
 
+    def set_history_buttons(self):
+        can_backward = self._nav_stack._pos > 0
+        can_forward = self._nav_stack._pos < len(self._nav_stack._elements) - 1
+        self._actions['back'].setEnabled(can_backward)
+        self._actions['forward'].setEnabled(can_forward)
+
 
 class SubplotToolQt(UiSubplotTool):
     def __init__(self, targetfig, parent):
@@ -1124,6 +1124,11 @@ class _BackendQT5(_Backend):
 
     @staticmethod
     def mainloop():
-        # allow KeyboardInterrupt exceptions to close the plot window.
+        old_signal = signal.getsignal(signal.SIGINT)
+        # allow SIGINT exceptions to close the plot window.
         signal.signal(signal.SIGINT, signal.SIG_DFL)
-        qApp.exec_()
+        try:
+            qApp.exec_()
+        finally:
+            # reset the SIGINT exception handler
+            signal.signal(signal.SIGINT, old_signal)

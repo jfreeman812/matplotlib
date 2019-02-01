@@ -2,18 +2,16 @@ import importlib
 import logging
 import os
 import sys
-import traceback
 
 import matplotlib
+from matplotlib import cbook
 from matplotlib.backend_bases import _Backend
 
 _log = logging.getLogger(__name__)
 
-backend = matplotlib.get_backend()
-_backend_loading_tb = "".join(
-    line for line in traceback.format_stack()
-    # Filter out line noise from importlib line.
-    if not line.startswith('  File "<frozen importlib._bootstrap'))
+
+# NOTE: plt.switch_backend() (called at import time) will add a "backend"
+# attribute here for backcompat.
 
 
 def _get_running_interactive_framework():
@@ -35,8 +33,7 @@ def _get_running_interactive_framework():
              or sys.modules.get("PySide.QtGui"))
     if QtGui and QtGui.QApplication.instance():
         return "qt4"
-    Gtk = (sys.modules.get("gi.repository.Gtk")
-           or sys.modules.get("pgi.repository.Gtk"))
+    Gtk = sys.modules.get("gi.repository.Gtk")
     if Gtk and Gtk.main_level():
         return "gtk3"
     wx = sys.modules.get("wx")
@@ -49,21 +46,15 @@ def _get_running_interactive_framework():
                 if frame.f_code == tkinter.mainloop.__code__:
                     return "tk"
                 frame = frame.f_back
-    try:
-        from matplotlib.backends import _macosx
-    except ImportError:
-        pass
-    else:
-        # Note that the NSApp event loop is also running when a non-native
-        # toolkit (e.g. Qt5) is active, but in that case we want to report the
-        # other toolkit; thus, this check comes after the other toolkits.
-        if _macosx.event_loop_is_running():
+    if 'matplotlib.backends._macosx' in sys.modules:
+        if sys.modules["matplotlib.backends._macosx"].event_loop_is_running():
             return "macosx"
     if sys.platform.startswith("linux") and not os.environ.get("DISPLAY"):
         return "headless"
     return None
 
 
+@cbook.deprecated("3.0")
 def pylab_setup(name=None):
     """
     Return new_figure_manager, draw_if_interactive and show for pyplot.

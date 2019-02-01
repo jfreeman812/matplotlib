@@ -11,7 +11,22 @@ from matplotlib.backend_bases import (
 from matplotlib.backend_managers import ToolManager
 from matplotlib.figure import Figure
 from matplotlib.widgets import SubplotTool
-from ._gtk3_compat import GLib, GObject, Gtk, Gdk
+
+try:
+    import gi
+except ImportError:
+    raise ImportError("The GTK3 backends require PyGObject")
+
+try:
+    # :raises ValueError: If module/version is already loaded, already
+    # required, or unavailable.
+    gi.require_version("Gtk", "3.0")
+except ValueError as e:
+    # in this case we want to re-raise as ImportError so the
+    # auto-backend selection logic correctly skips.
+    raise ImportError from e
+
+from gi.repository import GLib, GObject, Gtk, Gdk
 
 
 _log = logging.getLogger(__name__)
@@ -172,7 +187,6 @@ class FigureCanvasGTK3(Gtk.DrawingArea, FigureCanvasBase):
         self.set_double_buffered(True)
         self.set_can_focus(True)
         self._renderer_init()
-        default_context = GLib.main_context_get_thread_default() or GLib.main_context_default()
 
     def destroy(self):
         #Gtk.DrawingArea.destroy(self)
@@ -267,7 +281,7 @@ class FigureCanvasGTK3(Gtk.DrawingArea, FigureCanvasBase):
             return
         w, h = event.width, event.height
         if w < 3 or h < 3:
-            return # empty fig
+            return  # empty fig
         # resize the figure (in inches)
         dpi = self.figure.dpi
         self.figure.set_size_inches(w / dpi, h / dpi, forward=False)
@@ -278,11 +292,8 @@ class FigureCanvasGTK3(Gtk.DrawingArea, FigureCanvasBase):
         pass
 
     def draw(self):
-        if self.get_visible() and self.get_mapped():
+        if self.is_drawable():
             self.queue_draw()
-            # do a synchronous draw (its less efficient than an async draw,
-            # but is required if/when animation is used)
-            self.get_property("window").process_updates(False)
 
     def draw_idle(self):
         if self._idle_draw_id != 0:
@@ -492,6 +503,7 @@ class NavigationToolbar2GTK3(NavigationToolbar2, Gtk.Toolbar):
         self.set_style(Gtk.ToolbarStyle.ICONS)
         basedir = os.path.join(rcParams['datapath'], 'images')
 
+        self._gtk_ids = {}
         for text, tooltip_text, image_file, callback in self.toolitems:
             if text is None:
                 self.insert(Gtk.SeparatorToolItem(), -1)
@@ -499,7 +511,7 @@ class NavigationToolbar2GTK3(NavigationToolbar2, Gtk.Toolbar):
             fname = os.path.join(basedir, image_file + '.png')
             image = Gtk.Image()
             image.set_from_file(fname)
-            tbutton = Gtk.ToolButton()
+            self._gtk_ids[text] = tbutton = Gtk.ToolButton()
             tbutton.set_label(text)
             tbutton.set_icon_widget(image)
             self.insert(tbutton, -1)
@@ -571,6 +583,12 @@ class NavigationToolbar2GTK3(NavigationToolbar2, Gtk.Toolbar):
 
     def _get_canvas(self, fig):
         return self.canvas.__class__(fig)
+
+    def set_history_buttons(self):
+        can_backward = self._nav_stack._pos > 0
+        can_forward = self._nav_stack._pos < len(self._nav_stack._elements) - 1
+        self._gtk_ids['Back'].set_sensitive(can_backward)
+        self._gtk_ids['Forward'].set_sensitive(can_forward)
 
 
 class FileChooserDialog(Gtk.FileChooserDialog):
@@ -947,7 +965,7 @@ window_icon = os.path.join(
 
 
 def error_msg_gtk(msg, parent=None):
-    if parent is not None: # find the toplevel Gtk.Window
+    if parent is not None:  # find the toplevel Gtk.Window
         parent = parent.get_toplevel()
         if not parent.is_toplevel():
             parent = None

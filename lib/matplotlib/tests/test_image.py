@@ -3,6 +3,7 @@ from copy import copy
 import io
 import os
 import sys
+from pathlib import Path
 import platform
 import urllib.request
 import warnings
@@ -65,21 +66,21 @@ def test_interp_nearest_vs_none():
 
 def do_figimage(suppressComposite):
     """ Helper for the next two tests """
-    fig = plt.figure(figsize=(2,2), dpi=100)
+    fig = plt.figure(figsize=(2, 2), dpi=100)
     fig.suppressComposite = suppressComposite
-    x,y = np.ix_(np.arange(100.0)/100.0, np.arange(100.0)/100.0)
+    x, y = np.ix_(np.arange(100) / 100.0, np.arange(100) / 100)
     z = np.sin(x**2 + y**2 - x*y)
     c = np.sin(20*x**2 + 50*y**2)
     img = z + c/5
 
     fig.figimage(img, xo=0, yo=0, origin='lower')
-    fig.figimage(img[::-1,:], xo=0, yo=100, origin='lower')
-    fig.figimage(img[:,::-1], xo=100, yo=0, origin='lower')
-    fig.figimage(img[::-1,::-1], xo=100, yo=100, origin='lower')
+    fig.figimage(img[::-1, :], xo=0, yo=100, origin='lower')
+    fig.figimage(img[:, ::-1], xo=100, yo=0, origin='lower')
+    fig.figimage(img[::-1, ::-1], xo=100, yo=100, origin='lower')
 
 
 @image_comparison(baseline_images=['figimage-0'],
-                  extensions=['png','pdf'])
+                  extensions=['png', 'pdf'])
 def test_figimage0():
     'test the figimage method'
 
@@ -88,7 +89,7 @@ def test_figimage0():
 
 
 @image_comparison(baseline_images=['figimage-1'],
-                  extensions=['png','pdf'])
+                  extensions=['png', 'pdf'])
 def test_figimage1():
     'test the figimage method'
     suppressComposite = True
@@ -97,7 +98,7 @@ def test_figimage1():
 
 def test_image_python_io():
     fig, ax = plt.subplots()
-    ax.plot([1,2,3])
+    ax.plot([1, 2, 3])
     buffer = io.BytesIO()
     fig.savefig(buffer)
     buffer.seek(0)
@@ -112,17 +113,20 @@ def test_imread_pil_uint16():
     assert np.sum(img) == 134184960
 
 
-@pytest.mark.skipif(sys.version_info < (3, 6), reason="requires Python 3.6+")
 def test_imread_fspath():
     pytest.importorskip("PIL")
-    from pathlib import Path
     img = plt.imread(
         Path(__file__).parent / 'baseline_images/test_image/uint16.tif')
     assert img.dtype == np.uint16
     assert np.sum(img) == 134184960
 
 
-def test_imsave():
+@pytest.mark.parametrize("fmt", ["png", "jpg", "jpeg", "tiff"])
+def test_imsave(fmt):
+    if fmt in ["jpg", "jpeg", "tiff"]:
+        pytest.importorskip("PIL")
+    has_alpha = fmt not in ["jpg", "jpeg"]
+
     # The goal here is that the user can specify an output logical DPI
     # for the image, but this will not actually add any extra pixels
     # to the image, it will merely be used for metadata purposes.
@@ -131,30 +135,31 @@ def test_imsave():
     # == 100) and read the resulting PNG files back in and make sure
     # the data is 100% identical.
     np.random.seed(1)
-    data = np.random.rand(256, 128)
+    # The height of 1856 pixels was selected because going through creating an
+    # actual dpi=100 figure to save the image to a Pillow-provided format would
+    # cause a rounding error resulting in a final image of shape 1855.
+    data = np.random.rand(1856, 2)
 
     buff_dpi1 = io.BytesIO()
-    plt.imsave(buff_dpi1, data, dpi=1)
+    plt.imsave(buff_dpi1, data, format=fmt, dpi=1)
 
     buff_dpi100 = io.BytesIO()
-    plt.imsave(buff_dpi100, data, dpi=100)
+    plt.imsave(buff_dpi100, data, format=fmt, dpi=100)
 
     buff_dpi1.seek(0)
-    arr_dpi1 = plt.imread(buff_dpi1)
+    arr_dpi1 = plt.imread(buff_dpi1, format=fmt)
 
     buff_dpi100.seek(0)
-    arr_dpi100 = plt.imread(buff_dpi100)
+    arr_dpi100 = plt.imread(buff_dpi100, format=fmt)
 
-    assert arr_dpi1.shape == (256, 128, 4)
-    assert arr_dpi100.shape == (256, 128, 4)
+    assert arr_dpi1.shape == (1856, 2, 3 + has_alpha)
+    assert arr_dpi100.shape == (1856, 2, 3 + has_alpha)
 
     assert_array_equal(arr_dpi1, arr_dpi100)
 
 
-@pytest.mark.skipif(sys.version_info < (3, 6), reason="requires Python 3.6+")
 @pytest.mark.parametrize("fmt", ["png", "pdf", "ps", "eps", "svg"])
 def test_imsave_fspath(fmt):
-    Path = pytest.importorskip("pathlib").Path
     plt.imsave(Path(os.devnull), np.array([[0, 1]]), format=fmt)
 
 
@@ -262,6 +267,24 @@ def test_cursor_data():
     assert im.get_cursor_data(event) is None
 
 
+def test_format_cursor_data():
+    from matplotlib.backend_bases import MouseEvent
+
+    fig, ax = plt.subplots()
+    im = ax.imshow([[10000, 10001]])
+
+    xdisp, ydisp = ax.transData.transform_point([0, 0])
+    event = MouseEvent('motion_notify_event', fig.canvas, xdisp, ydisp)
+    assert im.get_cursor_data(event) == 10000
+    assert im.format_cursor_data(im.get_cursor_data(event)) == "[1e+04]"
+
+    fig.colorbar(im)
+    fig.canvas.draw()  # This is necessary to set up the colorbar formatter.
+
+    assert im.get_cursor_data(event) == 10000
+    assert im.format_cursor_data(im.get_cursor_data(event)) == "[0.0+1e4]"
+
+
 @image_comparison(baseline_images=['image_clip'], style='mpl20')
 def test_image_clip():
     d = [[1, 2], [3, 4]]
@@ -277,12 +300,12 @@ def test_image_cliprect():
     import matplotlib.patches as patches
 
     fig, ax = plt.subplots()
-    d = [[1,2],[3,4]]
+    d = [[1, 2], [3, 4]]
 
-    im = ax.imshow(d, extent=(0,5,0,5))
+    im = ax.imshow(d, extent=(0, 5, 0, 5))
 
     rect = patches.Rectangle(
-        xy=(1,1), width=2, height=2, transform=im.axes.transData)
+        xy=(1, 1), width=2, height=2, transform=im.axes.transData)
     im.set_clip_path(rect)
 
 
@@ -290,9 +313,9 @@ def test_image_cliprect():
 def test_imshow():
     fig, ax = plt.subplots()
     arr = np.arange(100).reshape((10, 10))
-    ax.imshow(arr, interpolation="bilinear", extent=(1,2,1,2))
-    ax.set_xlim(0,3)
-    ax.set_ylim(0,3)
+    ax.imshow(arr, interpolation="bilinear", extent=(1, 2, 1, 2))
+    ax.set_xlim(0, 3)
+    ax.set_ylim(0, 3)
 
 
 @image_comparison(baseline_images=['no_interpolation_origin'],
@@ -392,7 +415,7 @@ def test_image_composite_alpha():
                   remove_text=True, style='mpl20')
 def test_rasterize_dpi():
     # This test should check rasterized rendering with high output resolution.
-    # It plots a rasterized line and a normal image with implot.  So it will
+    # It plots a rasterized line and a normal image with imshow.  So it will
     # catch when images end up in the wrong place in case of non-standard dpi
     # setting.  Instead of high-res rasterization I use low-res.  Therefore
     # the fact that the resolution is non-standard is easily checked by
@@ -403,10 +426,10 @@ def test_rasterize_dpi():
 
     axes[0].imshow(img)
 
-    axes[1].plot([0,1], [0,1], linewidth=20., rasterized=True)
+    axes[1].plot([0, 1], [0, 1], linewidth=20., rasterized=True)
     axes[1].set(xlim=(0, 1), ylim=(-1, 2))
 
-    axes[2].plot([0,1], [0,1], linewidth=20.)
+    axes[2].plot([0, 1], [0, 1], linewidth=20.)
     axes[2].set(xlim=(0, 1), ylim=(-1, 2))
 
     # Low-dpi PDF rasterization errors prevent proper image comparison tests.
@@ -673,7 +696,7 @@ def test_image_preserve_size2():
     ax = plt.Axes(fig, [0.0, 0.0, 1.0, 1.0])
     ax.set_axis_off()
     fig.add_axes(ax)
-    ax.imshow(data, interpolation='nearest', origin='lower',aspect='auto')
+    ax.imshow(data, interpolation='nearest', origin='lower', aspect='auto')
     buff = io.BytesIO()
     fig.savefig(buff, dpi=1)
 
@@ -745,12 +768,11 @@ def test_mask_image():
 def test_imshow_endianess():
     x = np.arange(10)
     X, Y = np.meshgrid(x, x)
-    Z = ((X-5)**2 + (Y-5)**2)**0.5
+    Z = np.hypot(X - 5, Y - 5)
 
     fig, (ax1, ax2) = plt.subplots(1, 2)
 
-    kwargs = dict(origin="lower", interpolation='nearest',
-                  cmap='viridis')
+    kwargs = dict(origin="lower", interpolation='nearest', cmap='viridis')
 
     ax1.imshow(Z.astype('<f8'), **kwargs)
     ax2.imshow(Z.astype('>f8'), **kwargs)
@@ -837,7 +859,7 @@ def test_imshow_bignumbers():
     # putting a big number in an array of integers shouldn't
     # ruin the dynamic range of the resolved bits.
     fig, ax = plt.subplots()
-    img = np.array([[1, 2, 1e12],[3, 1, 4]], dtype=np.uint64)
+    img = np.array([[1, 2, 1e12], [3, 1, 4]], dtype=np.uint64)
     pc = ax.imshow(img)
     pc.set_clim(0, 5)
 
@@ -849,7 +871,7 @@ def test_imshow_bignumbers_real():
     # putting a big number in an array of integers shouldn't
     # ruin the dynamic range of the resolved bits.
     fig, ax = plt.subplots()
-    img = np.array([[2., 1., 1.e22],[4., 1., 3.]])
+    img = np.array([[2., 1., 1.e22], [4., 1., 3.]])
     pc = ax.imshow(img)
     pc.set_clim(0, 5)
 

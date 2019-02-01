@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import BoundaryNorm, LogNorm, PowerNorm
 from matplotlib.cm import get_cmap
 from matplotlib.colorbar import ColorbarBase
+from matplotlib.ticker import LogLocator, LogFormatter
 
 
 def _get_cmap_norms():
@@ -196,9 +197,8 @@ def test_colorbar_single_scatter():
     # the norm scaling within the colorbar must ensure a
     # finite range, otherwise a zero denominator will occur in _locate.
     plt.figure()
-    x = np.arange(4)
-    y = x.copy()
-    z = np.ma.masked_greater(np.arange(50, 54), 50)
+    x = y = [0]
+    z = [50]
     cmap = plt.get_cmap('jet', 16)
     cs = plt.scatter(x, y, z, c=z, cmap=cmap)
     plt.colorbar(cs)
@@ -242,17 +242,21 @@ def test_colorbar_closed_patch():
     cmap = get_cmap("RdBu", lut=5)
 
     im = ax1.pcolormesh(np.linspace(0, 10, 16).reshape((4, 4)), cmap=cmap)
-    values = np.linspace(0, 10, 5)
 
+    # The use of a "values" kwarg here is unusual.  It works only
+    # because it is matched to the data range in the image and to
+    # the number of colors in the LUT.
+    values = np.linspace(0, 10, 5)
+    cbar_kw = dict(cmap=cmap, orientation='horizontal', values=values,
+                   ticks=[])
+
+    # The wide line is to show that the closed path is being handled
+    # correctly.  See PR #4186.
     with rc_context({'axes.linewidth': 16}):
-        plt.colorbar(im, cax=ax2, cmap=cmap, orientation='horizontal',
-                     extend='both', extendfrac=0.5, values=values)
-        plt.colorbar(im, cax=ax3, cmap=cmap, orientation='horizontal',
-                     extend='both', values=values)
-        plt.colorbar(im, cax=ax4, cmap=cmap, orientation='horizontal',
-                     extend='both', extendrect=True, values=values)
-        plt.colorbar(im, cax=ax5, cmap=cmap, orientation='horizontal',
-                     extend='neither', values=values)
+        plt.colorbar(im, cax=ax2, extend='both', extendfrac=0.5, **cbar_kw)
+        plt.colorbar(im, cax=ax3, extend='both', **cbar_kw)
+        plt.colorbar(im, cax=ax4, extend='both', extendrect=True, **cbar_kw)
+        plt.colorbar(im, cax=ax5, extend='neither', **cbar_kw)
 
 
 def test_colorbar_ticks():
@@ -293,6 +297,33 @@ def test_colorbar_minorticks_on_off():
         # testing after minorticks_off()
         np.testing.assert_almost_equal(cbar.ax.yaxis.get_minorticklocs(),
                                        np.array([]))
+
+        im.set_clim(vmin=-1.2, vmax=1.2)
+        cbar.minorticks_on()
+        correct_minorticklocs = np.array([-1.2, -1.1, -0.9, -0.8, -0.7, -0.6,
+                                          -0.4, -0.3, -0.2, -0.1,  0.1, 0.2,
+                                           0.3,  0.4,  0.6,  0.7,  0.8,  0.9,
+                                           1.1,  1.2])
+        np.testing.assert_almost_equal(cbar.ax.yaxis.get_minorticklocs(),
+                                       correct_minorticklocs)
+
+    # tests for github issue #13257 and PR #13265
+    data = np.random.uniform(low=1, high=10, size=(20, 20))
+
+    fig, ax = plt.subplots()
+    im = ax.pcolormesh(data, norm=LogNorm())
+    cbar = fig.colorbar(im)
+    default_minorticklocks = cbar.ax.yaxis.get_minorticklocs()
+
+    # test that minorticks turn off for LogNorm
+    cbar.minorticks_off()
+    assert np.array_equal(cbar.ax.yaxis.get_minorticklocs(),
+                          np.array([]))
+
+    # test that minorticks turn back on for LogNorm
+    cbar.minorticks_on()
+    assert np.array_equal(cbar.ax.yaxis.get_minorticklocs(),
+                          default_minorticklocks)
 
 
 def test_colorbar_autoticks():
@@ -384,6 +415,55 @@ def test_colorbar_axes_kw():
     # test fix for #8493: This does only test, that axes-related keywords pass
     # and do not raise an exception.
     plt.figure()
-    plt.imshow(([[1, 2], [3, 4]]))
+    plt.imshow([[1, 2], [3, 4]])
     plt.colorbar(orientation='horizontal', fraction=0.2, pad=0.2, shrink=0.5,
                  aspect=10, anchor=(0., 0.), panchor=(0., 1.))
+
+
+def test_colorbar_log_minortick_labels():
+    with rc_context({'_internal.classic_mode': False}):
+        fig, ax = plt.subplots()
+        pcm = ax.imshow([[10000, 50000]], norm=LogNorm())
+        cb = fig.colorbar(pcm)
+        fig.canvas.draw()
+        lb = cb.ax.yaxis.get_ticklabels(which='both')
+        expected = [r'$\mathdefault{10^{4}}$',
+                    r'$\mathdefault{2\times10^{4}}$',
+                    r'$\mathdefault{3\times10^{4}}$',
+                    r'$\mathdefault{4\times10^{4}}$']
+        for l, exp in zip(lb, expected):
+            assert l.get_text() == exp
+
+
+def test_colorbar_renorm():
+    x, y = np.ogrid[-4:4:31j, -4:4:31j]
+    z = 120000*np.exp(-x**2 - y**2)
+
+    fig, ax = plt.subplots()
+    im = ax.imshow(z)
+    cbar = fig.colorbar(im)
+
+    norm = LogNorm(z.min(), z.max())
+    im.set_norm(norm)
+    cbar.set_norm(norm)
+    cbar.locator = LogLocator()
+    cbar.formatter = LogFormatter()
+    cbar.update_normal(im)
+    assert np.isclose(cbar.vmin, z.min())
+
+    norm = LogNorm(z.min() * 1000, z.max() * 1000)
+    im.set_norm(norm)
+    cbar.set_norm(norm)
+    cbar.update_normal(im)
+    assert np.isclose(cbar.vmin, z.min() * 1000)
+    assert np.isclose(cbar.vmax, z.max() * 1000)
+
+
+def test_colorbar_get_ticks():
+    with rc_context({'_internal.classic_mode': False}):
+
+        fig, ax = plt. subplots()
+        np.random.seed(19680801)
+        pc = ax.pcolormesh(np.random.rand(30, 30))
+        cb = fig.colorbar(pc)
+        np.testing.assert_allclose(cb.get_ticks(), [0.2, 0.4, 0.6, 0.8])
